@@ -113,7 +113,7 @@ export async function requireApproved(req: AuthedRequest, res: Response, next: N
       res.status(403).json({
         error: {
           code: 'ACCOUNT_PENDING',
-          message: 'Account pending approval. Super-admin approve korle full access pabe.',
+          message: 'Account pending approval. Full access unlocks after super-admin approval.',
         },
       });
       return;

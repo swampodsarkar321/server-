@@ -44,7 +44,7 @@ const profileSchema = z.object({
 router.post('/me/profile', requireAuth, async (req: AuthedRequest, res) => {
   const parsed = profileSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Display name (2-60 chars) lagbe' } });
+    res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Display name (2-60 chars) is required' } });
     return;
   }
   const existing = (await dbGet(`users/${req.uid}`)) ?? {};

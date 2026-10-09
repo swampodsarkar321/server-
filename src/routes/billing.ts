@@ -20,7 +20,7 @@ const claimSchema = z.object({
 router.post('/billing/claim', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = claimSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Package, TrxID ebong sender number lagbe', details: parsed.error.flatten() } });
+    res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Package, TrxID and sender number are required', details: parsed.error.flatten() } });
     return;
   }
   const key = await dbPush(`billingClaims/${req.workspaceId}`, {
@@ -38,7 +38,7 @@ router.post('/billing/claim', requireAuth, requireWorkspace, async (req: AuthedR
     createdAt: Date.now(),
     read: false,
   });
-  res.status(201).json({ claimKey: key, status: 'pending', message: 'Payment claim received. Verification-er por package active hobe.' });
+  res.status(201).json({ claimKey: key, status: 'pending', message: 'Payment claim received. The package activates after verification.' });
 });
 
 router.get('/billing/claims', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
