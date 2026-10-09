@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { searchKnowledge, buildSystemPrompt, shouldHandover, DEFAULT_BOT_SETTINGS } from '../src/services/knowledge.ts';
 import { verifySignature, verifyWebhookHandshake, parseMessengerEvents, parseCommentEvents } from '../src/services/meta.ts';
 import { getPlan } from '../src/services/plans.ts';
-import { config } from '../src/config/env.ts';
+import { config, isSuperAdmin } from '../src/config/env.ts';
 import { detectOrderIntent, startOrder, stepOrder, isCancel } from '../src/services/orderFlow.ts';
 import { encryptSecret, decryptSecret } from '../src/services/crypto.ts';
 
@@ -121,8 +121,7 @@ describe('order flow', () => {
   });
 });
 
-describe('comment events', () => {
-  it('parses new comment, ignores edits and own data', () => {
+describe('comment events', () => {  it('parses new comment, ignores edits and own data', () => {
     const evs = parseCommentEvents({
       object: 'page',
       entry: [{ id: 'P1', changes: [
@@ -135,3 +134,14 @@ describe('comment events', () => {
     assert.equal(evs[0].fromName, 'Rina');
   });
 });
+
+describe('super-admin gate', () => {
+  it('allows only allowlisted UIDs', () => {
+    config.superAdmins = ['uid-abc'];
+    assert.equal(isSuperAdmin('uid-abc'), true);
+    assert.equal(isSuperAdmin('intruder'), false);
+    assert.equal(isSuperAdmin(undefined), false);
+    config.superAdmins = [];
+  });
+});
+

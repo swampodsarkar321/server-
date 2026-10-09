@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { dbGet, dbSet, dbUpdate } from '../services/firebase.js';
 import { requireAuth, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
 import { DEFAULT_BOT_SETTINGS, buildSystemPrompt, searchKnowledge, type KnowledgeEntry } from '../services/knowledge.js';
-import { generateReply, type ChatMessage } from '../services/ai.js';
+import { generateReply, resolveWorkspaceKey, type ChatMessage } from '../services/ai.js';
 
 const router = Router();
 
@@ -27,9 +27,14 @@ const settingsSchema = z.object({
   commentReplyTemplate: z.string().max(800).optional(),
 });
 
+function maskSettings(s: any): any {
+  const { aiApiKeyEnc: _k, ...rest } = s ?? {};
+  return { ...rest, hasCustomKey: Boolean(s?.aiApiKeyEnc) };
+}
+
 router.get('/bot/settings', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
   const s = (await dbGet(`botSettings/${req.workspaceId}`)) ?? DEFAULT_BOT_SETTINGS;
-  res.json({ settings: { ...DEFAULT_BOT_SETTINGS, ...s } });
+  res.json({ settings: maskSettings({ ...DEFAULT_BOT_SETTINGS, ...s }) });
 });
 
 router.patch('/bot/settings', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
@@ -38,11 +43,11 @@ router.patch('/bot/settings', requireAuth, requireWorkspace, async (req: AuthedR
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid settings', details: parsed.error.flatten() } });
     return;
   }
-  const { workspaceId: _w, ...patch } = parsed.data;
+  const { workspaceId: _w, aiApiKey: _ignored, ...patch } = parsed.data as any;
   const current = (await dbGet(`botSettings/${req.workspaceId}`)) ?? DEFAULT_BOT_SETTINGS;
   const next = { ...current, ...patch, updatedAt: Date.now() };
   await dbSet(`botSettings/${req.workspaceId}`, next);
-  res.json({ settings: next });
+  res.json({ settings: maskSettings(next) });
 });
 
 const testSchema = z.object({
@@ -71,6 +76,7 @@ router.post('/bot/test', requireAuth, requireWorkspace, async (req: AuthedReques
     fallbackMessage: settings.fallbackMessage,
     providerName: settings.aiProvider,
     model: settings.aiModel,
+    apiKeyOverride: resolveWorkspaceKey(settings),
   });
   const reply = result.ok ? result.text.slice(0, settings.maxReplyChars) : result.text;
   res.json({

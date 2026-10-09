@@ -39,7 +39,12 @@ export const config = {
   },
   encryptionKey: req('ENCRYPTION_KEY'),
   devAllowlist: req('DEV_ALLOWLIST_UIDS').split(',').map((s) => s.trim()).filter(Boolean),
+  superAdmins: req('SUPER_ADMIN_UIDS').split(',').map((s) => s.trim()).filter(Boolean),
 };
+
+export function isSuperAdmin(uid?: string): boolean {
+  return Boolean(uid && config.superAdmins.includes(uid));
+}
 
 export function hasFirebase(): boolean {
   return Boolean(config.firebase.projectId && config.firebase.clientEmail && config.firebase.privateKey && config.firebase.databaseURL);

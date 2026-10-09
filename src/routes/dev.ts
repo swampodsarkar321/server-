@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { dbGet, dbSet, dbPush } from '../services/firebase.js';
 import { requireAuth, type AuthedRequest } from '../middleware/auth.js';
 import { DEFAULT_BOT_SETTINGS, buildSystemPrompt, searchKnowledge, shouldHandover, type KnowledgeEntry } from '../services/knowledge.js';
-import { generateReply } from '../services/ai.js';
+import { generateReply, resolveWorkspaceKey } from '../services/ai.js';
 
 const router = Router();
 
@@ -70,6 +70,7 @@ router.post('/dev/simulate', requireAuth, async (req: AuthedRequest, res) => {
       fallbackMessage: settings.fallbackMessage,
       providerName: settings.aiProvider,
       model: settings.aiModel,
+      apiKeyOverride: resolveWorkspaceKey(settings),
     });
     reply = result.ok ? result.text.slice(0, settings.maxReplyChars) : result.text;
     aiMeta = { provider: result.provider, model: result.model, ok: result.ok, error: result.error ?? null, latencyMs: result.latencyMs };

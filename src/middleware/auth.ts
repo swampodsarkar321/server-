@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyIdToken, dbGet } from '../services/firebase.js';
-import { config } from '../config/env.js';
+import { config, isSuperAdmin } from '../config/env.js';
 
 export interface AuthedRequest extends Request {
   uid?: string;
@@ -63,6 +63,12 @@ export async function requireWorkspace(req: AuthedRequest, res: Response, next: 
     }
     req.workspaceId = ws;
     req.workspaceRole = member.role ?? 'agent';
+    // Suspended workspaces are blocked everywhere (except super-admin inspection)
+    const wsData = await dbGet(`workspaces/${ws}`);
+    if (wsData?.suspended && !isSuperAdmin(req.uid)) {
+      res.status(403).json({ error: { code: 'WORKSPACE_SUSPENDED', message: 'Workspace suspended. Contact support.' } });
+      return;
+    }
     next();
   } catch (e) {
     res.status(500).json({ error: { code: 'INTERNAL', message: 'Membership check failed' } });
@@ -77,4 +83,13 @@ export function requireRole(...roles: string[]) {
     }
     next();
   };
+}
+
+/** Super-admin gate: UID must be in SUPER_ADMIN_UIDS. Nothing else grants access. */
+export function requireSuperAdmin(req: AuthedRequest, res: Response, next: NextFunction): void {
+  if (!isSuperAdmin(req.uid)) {
+    res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Super-admin only' } });
+    return;
+  }
+  next();
 }

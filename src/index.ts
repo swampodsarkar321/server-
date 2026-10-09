@@ -15,6 +15,7 @@ import devRoutes from './routes/dev.js';
 import webhookRoutes from './routes/webhooks.js';
 import broadcastRoutes from './routes/broadcast.js';
 import billingRoutes from './routes/billing.js';
+import adminRoutes from './routes/admin.js';
 
 initFirebase();
 
@@ -50,6 +51,7 @@ app.use('/api', facebookRoutes);
 app.use('/api', devRoutes);
 app.use('/api', broadcastRoutes);
 app.use('/api', billingRoutes);
+app.use('/api', adminRoutes);
 app.use('/webhooks', webhookRoutes);
 
 // Consistent error shape; never leak secrets

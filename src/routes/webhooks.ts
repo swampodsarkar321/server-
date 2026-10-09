@@ -4,7 +4,7 @@ import { dbGet, dbSet, dbUpdate, dbPush } from '../services/firebase.js';
 import { decryptSecret } from '../services/crypto.js';
 import { DEFAULT_BOT_SETTINGS, buildSystemPrompt, searchKnowledge, shouldHandover, type KnowledgeEntry } from '../services/knowledge.js';
 import { detectOrderIntent, startOrder, stepOrder, orderId, type OrderState } from '../services/orderFlow.js';
-import { generateReply } from '../services/ai.js';
+import { generateReply, resolveWorkspaceKey } from '../services/ai.js';
 import { getPlan, monthKey } from '../services/plans.js';
 
 const router = Router();
@@ -257,6 +257,7 @@ async function handleOne(ev: { pageId: string; senderPsid: string; text: string;
 
   // 6. Usage limits enforced on the backend
   const wsData = (await dbGet(`workspaces/${workspaceId}`)) ?? { planId: 'free' };
+  if (wsData.suspended) return; // suspended: no AI replies, message already stored for records
   const plan = getPlan(wsData.planId);
   const usage = (await dbGet(`usage/${workspaceId}/${monthKey()}`)) ?? { aiReplies: 0 };
   if ((usage.aiReplies ?? 0) >= plan.limits.aiRepliesPerMonth) {
@@ -287,6 +288,7 @@ async function handleOne(ev: { pageId: string; senderPsid: string; text: string;
     fallbackMessage: settings.fallbackMessage,
     providerName: settings.aiProvider,
     model: settings.aiModel,
+    apiKeyOverride: resolveWorkspaceKey(settings),
   });
 
   const replyText = result.ok ? result.text.slice(0, settings.maxReplyChars) : result.text;

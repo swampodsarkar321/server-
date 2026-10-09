@@ -1,4 +1,15 @@
 import { config } from '../config/env.js';
+import { decryptSecret } from './crypto.js';
+
+/** Decrypt a per-workspace API key override (server-side only, never logged). */
+export function resolveWorkspaceKey(settings: any): string | undefined {
+  if (!settings?.aiApiKeyEnc) return undefined;
+  try {
+    return decryptSecret(settings.aiApiKeyEnc);
+  } catch {
+    return undefined;
+  }
+}
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -17,16 +28,24 @@ export interface AiResult {
   fallback?: boolean;
 }
 
+export interface GenOpts {
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  timeoutMs: number;
+  apiKey?: string; // per-workspace override (encrypted at rest, server-side only)
+}
+
 export interface AiProvider {
   name: string;
-  generate(prompt: string, history: ChatMessage[], opts: { model: string; temperature: number; maxTokens: number; timeoutMs: number }): Promise<string>;
+  generate(prompt: string, history: ChatMessage[], opts: GenOpts): Promise<string>;
 }
 
 /** Primary provider: Google Gemini via REST generateContent (no SDK needed). */
 export class GeminiProvider implements AiProvider {
   name = 'gemini';
-  async generate(prompt: string, history: ChatMessage[], opts: { model: string; temperature: number; maxTokens: number; timeoutMs: number }): Promise<string> {
-    const key = config.ai.geminiKey;
+  async generate(prompt: string, history: ChatMessage[], opts: GenOpts): Promise<string> {
+    const key = opts.apiKey || config.ai.geminiKey;
     if (!key) throw Object.assign(new Error('GEMINI_API_KEY is not configured'), { code: 'NO_KEY' });
     const model = opts.model || 'gemini-2.0-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
@@ -79,8 +98,8 @@ export class GeminiProvider implements AiProvider {
 /** Optional future provider: Groq OpenAI-compatible chat completions. */
 export class GroqProvider implements AiProvider {
   name = 'groq';
-  async generate(prompt: string, history: ChatMessage[], opts: { model: string; temperature: number; maxTokens: number; timeoutMs: number }): Promise<string> {
-    const key = config.ai.groqKey;
+  async generate(prompt: string, history: ChatMessage[], opts: GenOpts): Promise<string> {
+    const key = opts.apiKey || config.ai.groqKey;
     if (!key) throw Object.assign(new Error('GROQ_API_KEY is not configured'), { code: 'NO_KEY' });
     const model = opts.model || 'llama-3.1-8b-instant';
     const ctrl = new AbortController();
@@ -138,6 +157,7 @@ export async function generateReply(args: {
   fallbackMessage: string;
   providerName?: string;
   model?: string;
+  apiKeyOverride?: string;
 }): Promise<AiResult> {
   const provider = getProvider(args.providerName);
   const model = args.model || config.ai.model;
@@ -153,6 +173,7 @@ export async function generateReply(args: {
         temperature: config.ai.temperature,
         maxTokens: config.ai.maxOutputTokens,
         timeoutMs: config.ai.timeoutMs,
+        apiKey: args.apiKeyOverride,
       });
       text = text.trim().slice(0, 2000);
       return { ok: true, text, provider: provider.name, model, inputChars, outputChars: text.length, latencyMs: Date.now() - t0 };
