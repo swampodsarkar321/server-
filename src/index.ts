@@ -15,7 +15,7 @@ import devRoutes from './routes/dev.js';
 import webhookRoutes from './routes/webhooks.js';
 import broadcastRoutes from './routes/broadcast.js';
 import billingRoutes from './routes/billing.js';
-import adminRoutes from './routes/admin.js';
+import adminRoutes from './admin/admin.routes.js';
 
 initFirebase();
 
