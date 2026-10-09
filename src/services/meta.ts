@@ -128,3 +128,48 @@ export async function getMessengerProfile(pageToken: string, psid: string): Prom
     return null;
   }
 }
+
+export interface CommentEvent {
+  pageId: string;
+  commentId: string;
+  postId?: string;
+  fromId?: string;
+  fromName?: string;
+  text: string;
+}
+
+/** Extract new Page-post comment events (requires `feed` webhook field subscription). */
+export function parseCommentEvents(body: any): CommentEvent[] {
+  const out: CommentEvent[] = [];
+  if (!body || body.object !== 'page' || !Array.isArray(body.entry)) return out;
+  for (const entry of body.entry) {
+    const pageId = String(entry.id ?? '');
+    for (const ch of entry.changes ?? []) {
+      const v = ch?.value;
+      if (ch?.field !== 'feed' || v?.item !== 'comment' || v?.verb !== 'add') continue;
+      if (!v.comment_id || !v.message) continue;
+      out.push({
+        pageId,
+        commentId: String(v.comment_id),
+        postId: v.post_id ? String(v.post_id) : undefined,
+        fromId: v.from?.id ? String(v.from.id) : undefined,
+        fromName: v.from?.name ? String(v.from.name).slice(0, 80) : undefined,
+        text: String(v.message).slice(0, 1000),
+      });
+    }
+  }
+  return out;
+}
+
+/** Public reply to a comment (drives engagement). Best-effort — throws on failure. */
+export async function replyToComment(pageToken: string, commentId: string, text: string): Promise<void> {
+  const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(commentId)}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pageToken}` },
+    body: JSON.stringify({ message: text.slice(0, 800) }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Comment reply failed ${res.status}: ${t.slice(0, 200)}`);
+  }
+}

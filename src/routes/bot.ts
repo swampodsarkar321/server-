@@ -22,6 +22,9 @@ const settingsSchema = z.object({
   maxReplyChars: z.number().int().min(50).max(2000).optional(),
   aiProvider: z.string().max(40).optional(),
   aiModel: z.string().max(80).optional(),
+  orderFlowEnabled: z.boolean().optional(),
+  commentReplyEnabled: z.boolean().optional(),
+  commentReplyTemplate: z.string().max(800).optional(),
 });
 
 router.get('/bot/settings', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {

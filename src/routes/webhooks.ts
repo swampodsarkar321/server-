@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { verifyWebhookHandshake, verifySignature, parseMessengerEvents, sendMessengerText, getMessengerProfile } from '../services/meta.js';
+import { verifyWebhookHandshake, verifySignature, parseMessengerEvents, sendMessengerText, getMessengerProfile, parseCommentEvents, replyToComment, type CommentEvent } from '../services/meta.js';
 import { dbGet, dbSet, dbUpdate, dbPush } from '../services/firebase.js';
 import { decryptSecret } from '../services/crypto.js';
 import { DEFAULT_BOT_SETTINGS, buildSystemPrompt, searchKnowledge, shouldHandover, type KnowledgeEntry } from '../services/knowledge.js';
+import { detectOrderIntent, startOrder, stepOrder, orderId, type OrderState } from '../services/orderFlow.js';
 import { generateReply } from '../services/ai.js';
 import { getPlan, monthKey } from '../services/plans.js';
 
@@ -48,10 +49,124 @@ async function processEvents(body: any): Promise<void> {
       console.error('[webhook] event failed', (e as Error)?.message);
     }
   }
+  const comments = parseCommentEvents(body);
+  for (const c of comments) {
+    try {
+      await handleComment(c);
+    } catch (e) {
+      console.error('[webhook] comment failed', (e as Error)?.message);
+    }
+  }
 }
 
-async function handleOne(ev: { pageId: string; senderPsid: string; text: string; mid?: string; timestamp: number }): Promise<void> {
-  // 1. Identify workspace via verified Page mapping (never trust client input here)
+/** One order-flow step: deterministic reply, order saved on confirm. Never claims success on send failure. */
+async function handleOrderStep(workspaceId: string, convId: string, conv: any, page: any, ev: { senderPsid: string; text: string }): Promise<void> {
+  let reply: string;
+  let nextState: OrderState | null;
+  let order: { product: string; qty: number; name: string; phone: string; address: string } | null = null;
+  if (!conv.orderState?.active) {
+    const started = startOrder(ev.text);
+    reply = started.reply;
+    nextState = started.state;
+  } else {
+    const r = stepOrder(conv.orderState as OrderState, ev.text);
+    reply = r.reply;
+    nextState = r.state.active ? r.state : null;
+    order = r.order ?? null;
+  }
+  let orderText = reply;
+  let orderIdStr: string | null = null;
+  if (order) {
+    orderIdStr = orderId();
+    await dbPush(`orders/${workspaceId}`, {
+      ...order,
+      id: orderIdStr,
+      conversationId: convId,
+      psid: ev.senderPsid,
+      pageId: conv.pageId,
+      status: 'new',
+      createdAt: Date.now(),
+    });
+    const L = (conv.orderState as OrderState)?.lang === 'en' ? 'en' : 'bn';
+    orderText =
+      L === 'en'
+        ? `Thank you! Your order is placed (no: ${orderIdStr}). Pay cash on delivery.`
+        : `ধন্যবাদ! আপনার অর্ডার নেওয়া হয়েছে (নম্বর: ${orderIdStr})। ক্যাশ অন ডেলিভারিতে পণ্য পাঠানো হবে।`;
+    await dbPush(`notifications/${workspaceId}`, {
+      kind: 'new_order',
+      conversationId: convId,
+      orderId: orderIdStr,
+      total: order.qty,
+      createdAt: Date.now(),
+      read: false,
+    });
+  }
+  try {
+    await sendMessengerText(decryptSecret(page.encryptedToken), ev.senderPsid, orderText);
+    await dbPush(`messages/${workspaceId}/${convId}`, {
+      sender: 'bot',
+      text: orderText,
+      createdAt: Date.now(),
+      via: 'order_flow',
+      orderId: orderIdStr,
+    });
+    await dbUpdate(`conversations/${workspaceId}/${convId}`, {
+      lastMessage: orderText,
+      lastMessageAt: Date.now(),
+      lastSender: 'bot',
+      failureCount: 0,
+      orderState: nextState,
+      ...(orderIdStr ? { lastOrderId: orderIdStr } : {}),
+    });
+  } catch (e: any) {
+    await dbUpdate(`conversations/${workspaceId}/${convId}`, {
+      failureCount: (conv.failureCount ?? 0) + 1,
+      orderState: conv.orderState ?? null,
+    });
+    await dbPush(`messages/${workspaceId}/${convId}`, { sender: 'system', text: `Order reply send failed: ${(e?.message ?? 'unknown').slice(0, 200)}`, createdAt: Date.now() });
+  }
+}
+
+/** Auto-reply to new Page post comments (public reply = engagement). Skips own comments. */
+async function handleComment(c: CommentEvent): Promise<void> {
+  const pageIdx = await dbGet(`pageIndex/${c.pageId}`);
+  if (!pageIdx?.workspaceId) return;
+  const workspaceId: string = pageIdx.workspaceId;
+  const page = await dbGet(`facebookPages/${c.pageId}`);
+  if (!page?.encryptedToken || page.workspaceId !== workspaceId) return;
+  if (c.fromId && c.fromId === c.pageId) return; // our own comment — ignore
+
+  const settings = { ...DEFAULT_BOT_SETTINGS, ...((await dbGet(`botSettings/${workspaceId}`)) ?? {}) };
+  if ((settings as any).commentReplyEnabled === false) return;
+
+  // Idempotency per comment
+  const seen = await dbGet(`processedComments/${workspaceId}/${c.commentId}`);
+  if (seen) return;
+  await dbSet(`processedComments/${workspaceId}/${c.commentId}`, { at: Date.now() });
+
+  const template: string =
+    (settings as any).commentReplyTemplate ||
+    'Thanks for your comment! 🙏 Please inbox us to order — we reply fast.';
+  try {
+    await replyToComment(decryptSecret(page.encryptedToken), c.commentId, template);
+    await dbPush(`commentReplies/${workspaceId}`, {
+      commentId: c.commentId,
+      postId: c.postId ?? null,
+      fromName: c.fromName ?? null,
+      text: c.text.slice(0, 200),
+      reply: template,
+      createdAt: Date.now(),
+    });
+  } catch (e: any) {
+    await dbPush(`commentReplies/${workspaceId}`, {
+      commentId: c.commentId,
+      error: (e?.message ?? 'failed').slice(0, 200),
+      createdAt: Date.now(),
+    });
+  }
+}
+
+async function handleOne(ev: { pageId: string; senderPsid: string; text: string; mid?: string; timestamp: number }): Promise<void> {  // 1. Identify workspace via verified Page mapping (never trust client input here)
   const pageIdx = await dbGet(`pageIndex/${ev.pageId}`);
   if (!pageIdx?.workspaceId) return; // unknown/unconnected page — ignore
   const workspaceId: string = pageIdx.workspaceId;
@@ -109,6 +224,13 @@ async function handleOne(ev: { pageId: string; senderPsid: string; text: string;
 
   // 4. Respect pauses: bot disabled, handover active, agent took over
   if (!settings.enabled || conv.aiPaused || conv.status === 'waiting_human') return;
+
+  // 4b. COD order-taking flow (no AI quota consumed — deterministic steps)
+  const orderOn = (settings as any).orderFlowEnabled !== false;
+  if (orderOn && (conv.orderState?.active || detectOrderIntent(ev.text))) {
+    await handleOrderStep(workspaceId, convId, conv, page, ev);
+    return;
+  }
 
   // 5. Handover rules
   const { handover, reason } = shouldHandover(ev.text, settings, conv.failureCount ?? 0);

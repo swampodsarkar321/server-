@@ -107,6 +107,8 @@ export function buildSystemPrompt(settings: BotSettings, kb: KnowledgeEntry[]): 
     'Answer using ONLY the business information below and the conversation context.',
     'Never invent prices, delivery charges, order status, policies or business details.',
     'If you do not know the answer, say so briefly and offer to hand over to a human agent.',
+    'If the customer wants to place an order or buy something, do NOT take the order yourself — reply in one short sentence that the order process is starting.',
+    'Keep every reply short, formal and polite. One question at a time. No emojis unless the customer uses them.',
     'If the customer asks for a human, complains, or requests a refund, acknowledge warmly and say a human agent will take over.',
     'Do not repeat greetings to the same customer. Do not repeat the same answer unnecessarily.',
     'If the request is unclear, ask one short clarifying question.',
