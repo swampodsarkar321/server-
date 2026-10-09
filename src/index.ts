@@ -22,7 +22,24 @@ initFirebase();
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(cors({ origin: config.frontendUrl.split(',').map((s) => s.trim()), credentials: true }));
+const configuredOrigins = config.frontendUrl.split(',').map((s) => s.trim()).filter(Boolean);
+// Always allow the production Vercel frontend + any Vercel preview for this project,
+// even if FRONTEND_URL env on Render is stale (localhost only).
+const fallbackOrigins = ['https://pika-pika-client-gblu-beta.vercel.app'];
+const allowedOrigins = [...new Set([...configuredOrigins, ...fallbackOrigins])];
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  }),
+);
 app.use(morgan('tiny'));
 
 // Capture raw body for Meta signature verification BEFORE json parsing
