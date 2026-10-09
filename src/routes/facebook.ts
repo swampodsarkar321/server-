@@ -50,7 +50,15 @@ router.get('/facebook/callback', async (req, res) => {
     });
     // Temporarily stash user token server-side only (never to browser)
     await dbSet(`oauthUserTokens/${saved.workspaceId}`, { token: encryptSecret(tok.access_token), createdAt: Date.now() });
-    res.redirect(`${config.frontendUrl}/pages?connected=candidates&workspaceId=${encodeURIComponent(saved.workspaceId)}`);
+    // FRONTEND_URL may be a comma list ("https://prod,http://localhost:5173").
+    // Prefer the first https origin so OAuth never bounces back to localhost in prod.
+    const origins = config.frontendUrl
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean);
+    const frontendBase =
+      origins.find((o) => o.startsWith('https://')) ?? origins[0] ?? 'http://localhost:5173';
+    res.redirect(`${frontendBase}/pages?connected=candidates&workspaceId=${encodeURIComponent(saved.workspaceId)}`);
   } catch (e: any) {
     res.status(502).send(`<h3>Facebook connection failed</h3><p>${(e?.message ?? 'Token exchange failed').slice(0, 300)}</p>`);
   }
