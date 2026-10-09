@@ -108,3 +108,23 @@ export async function sendMessengerText(pageToken: string, psid: string, text: s
   }
   return (await res.json()) as any;
 }
+
+/**
+ * Fetch the customer's public messaging profile (name + picture) via the
+ * official Graph API using the Page token. Returns null when unavailable —
+ * callers must fall back to a generic label and never fabricate data.
+ */
+export async function getMessengerProfile(pageToken: string, psid: string): Promise<{ name?: string; profilePic?: string } | null> {
+  try {
+    const params = new URLSearchParams({ fields: 'name,profile_pic', access_token: pageToken });
+    const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(psid)}?${params.toString()}`);
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    return {
+      name: typeof data?.name === 'string' ? data.name.slice(0, 80) : undefined,
+      profilePic: typeof data?.profile_pic === 'string' ? data.profile_pic : undefined,
+    };
+  } catch {
+    return null;
+  }
+}

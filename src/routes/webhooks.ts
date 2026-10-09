@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { verifyWebhookHandshake, verifySignature, parseMessengerEvents, sendMessengerText } from '../services/meta.js';
+import { verifyWebhookHandshake, verifySignature, parseMessengerEvents, sendMessengerText, getMessengerProfile } from '../services/meta.js';
 import { dbGet, dbSet, dbUpdate, dbPush } from '../services/firebase.js';
 import { decryptSecret } from '../services/crypto.js';
 import { DEFAULT_BOT_SETTINGS, buildSystemPrompt, searchKnowledge, shouldHandover, type KnowledgeEntry } from '../services/knowledge.js';
@@ -87,6 +87,16 @@ async function handleOne(ev: { pageId: string; senderPsid: string; text: string;
   conv.lastMessageAt = Date.now();
   conv.lastSender = 'customer';
   conv.unread = (conv.unread ?? 0) + 1;
+  // Fill in the real customer name from Meta's official profile API (best-effort).
+  if (!conv.customerName) {
+    try {
+      const profile = await getMessengerProfile(decryptSecret(page.encryptedToken), ev.senderPsid);
+      if (profile?.name) conv.customerName = profile.name;
+      if (profile?.profilePic) conv.customerPic = profile.profilePic;
+    } catch {
+      /* keep generic label */
+    }
+  }
   await dbSet(`conversations/${workspaceId}/${convId}`, conv);
   await dbPush(`messages/${workspaceId}/${convId}`, {
     sender: 'customer',
