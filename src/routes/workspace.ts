@@ -76,4 +76,23 @@ router.get('/workspaces/:workspaceId', requireAuth, requireWorkspace, async (req
   res.json({ workspace: { id: req.workspaceId, role: req.workspaceRole, ...ws } });
 });
 
+/** Real team roster: workspace members enriched with Auth emails (server-side only). */
+router.get('/team', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+  const members = (await dbGet(`workspaceMembers/${req.workspaceId}`)) ?? {};
+  const list: Array<{ uid: string; role: string; email: string | null; joinedAt: number | null }> = [];
+  for (const [uid, m] of Object.entries<any>(members)) {
+    let email: string | null = null;
+    try {
+      const { getAuth } = await import('firebase-admin/auth');
+      const u = await getAuth().getUser(uid);
+      email = u.email ?? (u.phoneNumber ?? null);
+    } catch {
+      email = null;
+    }
+    list.push({ uid, role: m?.role ?? 'agent', email, joinedAt: m?.joinedAt ?? null });
+  }
+  list.sort((a, b) => (a.role === 'owner' ? -1 : 1));
+  res.json({ members: list });
+});
+
 export default router;
