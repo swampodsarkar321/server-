@@ -7,6 +7,21 @@ import { sendMessengerText } from '../services/meta.js';
 
 const router = Router();
 
+router.get('/notifications', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+  const all = (await dbGet(`notifications/${req.workspaceId}`)) ?? {};
+  const list = Object.entries<any>(all).map(([id, v]) => ({ id, ...v }));
+  list.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  res.json({ notifications: list.slice(0, 50), unread: list.filter((n) => !n.read).length });
+});
+
+router.post('/notifications/read', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+  const all = (await dbGet(`notifications/${req.workspaceId}`)) ?? {};
+  for (const [id, n] of Object.entries<any>(all)) {
+    if (!n.read) await dbUpdate(`notifications/${req.workspaceId}/${id}`, { read: true });
+  }
+  res.json({ ok: true });
+});
+
 function convPath(ws: string) {
   return `conversations/${ws}`;
 }
