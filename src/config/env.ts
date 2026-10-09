@@ -40,10 +40,15 @@ export const config = {
   encryptionKey: req('ENCRYPTION_KEY'),
   devAllowlist: req('DEV_ALLOWLIST_UIDS').split(',').map((s) => s.trim()).filter(Boolean),
   superAdmins: req('SUPER_ADMIN_UIDS').split(',').map((s) => s.trim()).filter(Boolean),
+  superAdminEmails: req('SUPER_ADMIN_EMAILS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 };
 
 export function isSuperAdmin(uid?: string): boolean {
   return Boolean(uid && config.superAdmins.includes(uid));
+}
+
+export function isSuperAdminEmail(email?: string | null): boolean {
+  return Boolean(email && config.superAdminEmails.includes(email.toLowerCase()));
 }
 
 export function hasFirebase(): boolean {

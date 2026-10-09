@@ -1,9 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyIdToken, dbGet } from '../services/firebase.js';
-import { config, isSuperAdmin } from '../config/env.js';
+import { config, isSuperAdmin, isSuperAdminEmail } from '../config/env.js';
 
 export interface AuthedRequest extends Request {
   uid?: string;
+  email?: string | null;
   workspaceId?: string;
   workspaceRole?: string;
 }
@@ -35,6 +36,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   try {
     const decoded = await verifyIdToken(token);
     req.uid = decoded.uid;
+    req.email = (decoded.email as string | undefined)?.toLowerCase() ?? null;
     next();
   } catch {
     res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Invalid or expired token' } });
@@ -65,7 +67,7 @@ export async function requireWorkspace(req: AuthedRequest, res: Response, next: 
     req.workspaceRole = member.role ?? 'agent';
     // Suspended workspaces are blocked everywhere (except super-admin inspection)
     const wsData = await dbGet(`workspaces/${ws}`);
-    if (wsData?.suspended && !isSuperAdmin(req.uid)) {
+    if (wsData?.suspended && !isSuperAdmin(req.uid) && !isSuperAdminEmail(req.email)) {
       res.status(403).json({ error: { code: 'WORKSPACE_SUSPENDED', message: 'Workspace suspended. Contact support.' } });
       return;
     }
@@ -85,9 +87,9 @@ export function requireRole(...roles: string[]) {
   };
 }
 
-/** Super-admin gate: UID must be in SUPER_ADMIN_UIDS. Nothing else grants access. */
+/** Super-admin gate: UID in SUPER_ADMIN_UIDS or email in SUPER_ADMIN_EMAILS. Nothing else grants access. */
 export function requireSuperAdmin(req: AuthedRequest, res: Response, next: NextFunction): void {
-  if (!isSuperAdmin(req.uid)) {
+  if (!isSuperAdmin(req.uid) && !isSuperAdminEmail(req.email)) {
     res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Super-admin only' } });
     return;
   }
