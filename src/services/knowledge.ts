@@ -87,8 +87,12 @@ export function buildSystemPrompt(settings: BotSettings, kb: KnowledgeEntry[]): 
           : 'Warm, friendly and helpful.';
   const lang =
     settings.replyLanguage === 'auto'
-      ? 'Reply in the same language the customer uses (Bangla, Banglish/Bangla-written-in-English, or English).'
-      : `Reply in ${settings.replyLanguage}.`;
+      ? 'Reply in the same language the customer uses (Bangla or English only — never Banglish/mixed broken language).'
+      : settings.replyLanguage === 'bn'
+        ? 'Always reply in proper Bangla (বাংলা). Never reply in Banglish or English.'
+        : settings.replyLanguage === 'en'
+          ? 'Always reply in proper English. Never reply in Banglish or Bangla.'
+          : `Reply in ${settings.replyLanguage}. Never use Banglish.`;
   const kbText =
     kb.length > 0
       ? kb.map((e, i) => `[${i + 1}] ${e.title ?? e.question ?? e.type}: ${e.answer}`).join('\n')
