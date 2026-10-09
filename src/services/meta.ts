@@ -58,7 +58,7 @@ export function oauthConnectUrl(state: string): string {
     client_id: config.meta.appId,
     redirect_uri: config.meta.redirectUri,
     state,
-    scope: 'pages_messaging,pages_manage_metadata,pages_read_engagement,pages_show_list',
+    scope: 'pages_messaging,pages_manage_metadata,pages_show_list',
     response_type: 'code',
   });
   return `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
