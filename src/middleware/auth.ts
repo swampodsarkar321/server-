@@ -95,3 +95,31 @@ export function requireSuperAdmin(req: AuthedRequest, res: Response, next: NextF
   }
   next();
 }
+
+/**
+ * Approval gate (limited-view mode): new signups can sign in and view (GET),
+ * but all writes stay blocked until a super-admin approves the account.
+ * Super-admins bypass. Profile-less legacy users with existing workspaces
+ * are treated as approved (grandfathered).
+ */
+export async function requireApproved(req: AuthedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (isSuperAdmin(req.uid) || isSuperAdminEmail(req.email)) {
+      next();
+      return;
+    }
+    const profile = await dbGet(`users/${req.uid}`);
+    if (profile?.approved === false) {
+      res.status(403).json({
+        error: {
+          code: 'ACCOUNT_PENDING',
+          message: 'Account pending approval. Super-admin approve korle full access pabe.',
+        },
+      });
+      return;
+    }
+    next();
+  } catch {
+    res.status(500).json({ error: { code: 'INTERNAL', message: 'Approval check failed' } });
+  }
+}

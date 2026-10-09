@@ -65,16 +65,28 @@ router.get('/admin/overview', async (_req, res) => {
 
 router.get('/admin/workspaces', async (_req, res) => {
   const wss = (await dbGet('workspaces')) ?? {};
-  const [convs, orders, usage, members] = await Promise.all([
+  const [convs, orders, usage, members, users] = await Promise.all([
     dbGet('conversations'),
     dbGet('orders'),
     dbGet('usage'),
     dbGet('workspaceMembers'),
+    dbGet('users'),
   ]);
   const list = await Promise.all(
     Object.entries<any>(wss).map(async ([id, w]) => {
       const bot = await dbGet(`botSettings/${id}`);
       const pages = await dbGet(`facebookPagesByWorkspace/${id}`);
+      const ownerUid: string | null = w.createdBy ?? Object.keys(members?.[id] ?? {})[0] ?? null;
+      const owner = ownerUid ? (users?.[ownerUid] ?? null) : null;
+      let ownerEmail: string | null = owner?.email ?? null;
+      if (ownerUid && !ownerEmail) {
+        try {
+          const { getAuth } = await import('firebase-admin/auth');
+          ownerEmail = (await getAuth().getUser(ownerUid)).email ?? null;
+        } catch {
+          ownerEmail = null;
+        }
+      }
       return {
         id,
         name: w.name,
@@ -82,6 +94,10 @@ router.get('/admin/workspaces', async (_req, res) => {
         planId: w.planId ?? 'free',
         suspended: Boolean(w.suspended),
         createdAt: w.createdAt,
+        ownerUid,
+        ownerName: owner?.displayName ?? null,
+        ownerEmail,
+        ownerApproved: owner?.approved !== false,
         conversations: Object.keys(convs?.[id] ?? {}).length,
         orders: Object.keys(orders?.[id] ?? {}).length,
         pages: Object.keys(pages ?? {}),
@@ -96,6 +112,60 @@ router.get('/admin/workspaces', async (_req, res) => {
   );
   list.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   res.json({ workspaces: list, plans: Object.values(PLANS).map((p) => ({ id: p.id, name: p.name, limits: p.limits })) });
+});
+
+/** All registered users (for approval queue). Shows the name given at signup. */
+router.get('/admin/users', async (req: AuthedRequest, res) => {
+  const status = (req.query.status as string) ?? 'all';
+  const users = (await dbGet('users')) ?? {};
+  const out: any[] = [];
+  for (const [uid, u] of Object.entries<any>(users)) {
+    const approved = u?.approved !== false;
+    if (status === 'pending' && approved) continue;
+    if (status === 'approved' && !approved) continue;
+    let email: string | null = u?.email ?? null;
+    if (!email) {
+      try {
+        const { getAuth } = await import('firebase-admin/auth');
+        email = (await getAuth().getUser(uid)).email ?? null;
+      } catch {
+        email = null;
+      }
+    }
+    out.push({
+      uid,
+      displayName: u?.displayName ?? null,
+      email,
+      approved,
+      createdAt: u?.createdAt ?? null,
+      approvedBy: u?.approvedBy ?? null,
+      approvedAt: u?.approvedAt ?? null,
+    });
+  }
+  out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  res.json({ users: out.slice(0, 300) });
+});
+
+const approvalSchema = z.object({ approved: z.boolean() });
+
+router.patch('/admin/users/:uid/approval', async (req: AuthedRequest, res) => {
+  const parsed = approvalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'approved boolean required' } });
+    return;
+  }
+  const existing = await dbGet(`users/${req.params.uid}`);
+  if (!existing) {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+    return;
+  }
+  await dbUpdate(`users/${req.params.uid}`, {
+    approved: parsed.data.approved,
+    approvedBy: req.uid,
+    approvedAt: Date.now(),
+  });
+  await dbPushLog(req.params.uid, req.uid!, parsed.data.approved ? 'user approved' : 'user approval revoked');
+  res.json({ uid: req.params.uid, approved: parsed.data.approved });
 });
 
 const planSchema = z.object({ planId: z.enum(['free', 'starter', 'business']) });

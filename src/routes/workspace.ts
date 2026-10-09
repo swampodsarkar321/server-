@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { dbGet, dbSet, dbPush } from '../services/firebase.js';
-import { requireAuth, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
+import { dbGet, dbSet, dbPush, dbUpdate } from '../services/firebase.js';
+import { requireAuth, requireApproved, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
+import { isSuperAdmin, isSuperAdminEmail } from '../config/env.js';
 
 const router = Router();
 
 router.get('/me', requireAuth, async (req: AuthedRequest, res) => {
-  const profile = await dbGet(`users/${req.uid}`);
+  let profile = await dbGet(`users/${req.uid}`);
   const memberships = await dbGet(`workspaceMembers`);
   const workspaceIds: string[] = [];
   if (memberships && typeof memberships === 'object') {
@@ -14,7 +15,48 @@ router.get('/me', requireAuth, async (req: AuthedRequest, res) => {
       if (members && members[req.uid!]) workspaceIds.push(ws);
     }
   }
-  res.json({ uid: req.uid, profile: profile ?? null, workspaceIds });
+  // Auto-create missing profile. Grandfather existing active users as approved;
+  // brand-new signups (no workspace yet) start as pending.
+  if (!profile) {
+    const admin = isSuperAdmin(req.uid) || isSuperAdminEmail(req.email);
+    profile = {
+      email: req.email ?? null,
+      displayName: null,
+      approved: admin || workspaceIds.length > 0,
+      createdAt: Date.now(),
+      ...(admin ? { approvedBy: 'auto-super-admin', approvedAt: Date.now() } : {}),
+    };
+    await dbSet(`users/${req.uid}`, profile);
+  }
+  res.json({
+    uid: req.uid,
+    profile: profile ?? null,
+    workspaceIds,
+    isAdmin: isSuperAdmin(req.uid) || isSuperAdminEmail(req.email),
+    approved: profile?.approved !== false,
+  });
+});
+
+const profileSchema = z.object({
+  displayName: z.string().min(2).max(60),
+});
+
+router.post('/me/profile', requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = profileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Display name (2-60 chars) lagbe' } });
+    return;
+  }
+  const existing = (await dbGet(`users/${req.uid}`)) ?? {};
+  const admin = isSuperAdmin(req.uid) || isSuperAdminEmail(req.email);
+  const isNew = !existing.createdAt;
+  await dbUpdate(`users/${req.uid}`, {
+    displayName: parsed.data.displayName,
+    email: req.email ?? existing.email ?? null,
+    ...(isNew ? { createdAt: Date.now(), approved: admin } : {}),
+  });
+  const updated = await dbGet(`users/${req.uid}`);
+  res.json({ profile: updated });
 });
 
 router.get('/workspaces', requireAuth, async (req: AuthedRequest, res) => {
@@ -36,7 +78,7 @@ const createWs = z.object({
   businessName: z.string().min(1).max(120).optional(),
 });
 
-router.post('/workspaces', requireAuth, async (req: AuthedRequest, res) => {
+router.post('/workspaces', requireAuth, requireApproved, async (req: AuthedRequest, res) => {
   const parsed = createWs.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid workspace payload', details: parsed.error.flatten() } });

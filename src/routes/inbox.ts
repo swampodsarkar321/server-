@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { dbGet, dbSet, dbUpdate, dbPush } from '../services/firebase.js';
-import { requireAuth, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
+import { requireAuth, requireApproved, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
 import { decryptSecret } from '../services/crypto.js';
 import { sendMessengerText } from '../services/meta.js';
 
@@ -66,7 +66,7 @@ const replySchema = z.object({
   text: z.string().min(1).max(2000),
 });
 
-router.post('/conversations/:conversationId/reply', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/conversations/:conversationId/reply', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = replySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid reply', details: parsed.error.flatten() } });
@@ -111,7 +111,7 @@ router.post('/conversations/:conversationId/reply', requireAuth, requireWorkspac
   res.json({ messageId: msgId, forwarded, forwardError });
 });
 
-router.post('/conversations/:conversationId/handover', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/conversations/:conversationId/handover', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const conv = await dbGet(`${convPath(req.workspaceId!)}/${req.params.conversationId}`);
   if (!conv) {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Conversation not found' } });
@@ -131,7 +131,7 @@ router.post('/conversations/:conversationId/handover', requireAuth, requireWorks
   res.json({ handoverId: hid, status: 'waiting_human' });
 });
 
-router.post('/conversations/:conversationId/resume', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/conversations/:conversationId/resume', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const conv = await dbGet(`${convPath(req.workspaceId!)}/${req.params.conversationId}`);
   if (!conv) {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Conversation not found' } });
@@ -149,7 +149,7 @@ router.post('/conversations/:conversationId/resume', requireAuth, requireWorkspa
 
 const statusSchema = z.object({ workspaceId: z.string().min(1), status: z.enum(['open', 'resolved', 'waiting_human']) });
 
-router.patch('/conversations/:conversationId/status', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.patch('/conversations/:conversationId/status', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = statusSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid status', details: parsed.error.flatten() } });
@@ -164,7 +164,7 @@ router.patch('/conversations/:conversationId/status', requireAuth, requireWorksp
   res.json({ status: parsed.data.status });
 });
 
-router.post('/conversations/:conversationId/notes', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/conversations/:conversationId/notes', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const text = String(req.body?.text ?? '').slice(0, 1000);
   if (!text) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Note text required' } });

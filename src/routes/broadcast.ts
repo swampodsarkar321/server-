@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { dbGet, dbPush, dbUpdate } from '../services/firebase.js';
-import { requireAuth, requireWorkspace, requireRole, type AuthedRequest } from '../middleware/auth.js';
+import { requireAuth, requireApproved, requireWorkspace, requireRole, type AuthedRequest } from '../middleware/auth.js';
 import { decryptSecret } from '../services/crypto.js';
 import { sendMessengerText } from '../services/meta.js';
 
@@ -34,7 +34,7 @@ const castSchema = z.object({
   dryRun: z.boolean().optional(),
 });
 
-router.post('/broadcast', requireAuth, requireWorkspace, requireRole('owner', 'admin'), async (req: AuthedRequest, res) => {
+router.post('/broadcast', requireAuth, requireApproved, requireWorkspace, requireRole('owner', 'admin'), async (req: AuthedRequest, res) => {
   const parsed = castSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Broadcast text (1-1000 chars) required', details: parsed.error.flatten() } });
@@ -86,7 +86,7 @@ router.get('/orders', requireAuth, requireWorkspace, async (req: AuthedRequest, 
 
 const orderStatus = z.object({ workspaceId: z.string().min(1), status: z.enum(['new', 'confirmed', 'shipped', 'delivered', 'cancelled']) });
 
-router.patch('/orders/:orderKey/status', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.patch('/orders/:orderKey/status', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = orderStatus.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid status' } });

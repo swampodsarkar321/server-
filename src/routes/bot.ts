@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { dbGet, dbSet, dbUpdate } from '../services/firebase.js';
-import { requireAuth, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
+import { requireAuth, requireApproved, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
 import { DEFAULT_BOT_SETTINGS, buildSystemPrompt, searchKnowledge, type KnowledgeEntry } from '../services/knowledge.js';
 import { generateReply, resolveWorkspaceKey, type ChatMessage } from '../services/ai.js';
 
@@ -37,7 +37,7 @@ router.get('/bot/settings', requireAuth, requireWorkspace, async (req: AuthedReq
   res.json({ settings: maskSettings({ ...DEFAULT_BOT_SETTINGS, ...s }) });
 });
 
-router.patch('/bot/settings', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.patch('/bot/settings', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = settingsSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid settings', details: parsed.error.flatten() } });
@@ -57,7 +57,7 @@ const testSchema = z.object({
 });
 
 /** Test-chat panel: runs the real AI pipeline without sending Messenger messages. */
-router.post('/bot/test', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/bot/test', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = testSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid test payload', details: parsed.error.flatten() } });

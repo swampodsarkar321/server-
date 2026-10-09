@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { dbGet, dbSet, dbUpdate } from '../services/firebase.js';
-import { requireAuth, requireWorkspace, requireRole, type AuthedRequest } from '../middleware/auth.js';
+import { requireAuth, requireApproved, requireWorkspace, requireRole, type AuthedRequest } from '../middleware/auth.js';
 import { getPlan, monthKey } from '../services/plans.js';
 
 const router = Router();
@@ -32,7 +32,7 @@ router.get('/knowledge', requireAuth, requireWorkspace, async (req: AuthedReques
   res.json({ entries });
 });
 
-router.post('/knowledge', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/knowledge', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid knowledge entry', details: parsed.error.flatten() } });
@@ -49,7 +49,7 @@ router.post('/knowledge', requireAuth, requireWorkspace, async (req: AuthedReque
   res.status(201).json({ entry: { id, ...entry } });
 });
 
-router.patch('/knowledge/:entryId', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.patch('/knowledge/:entryId', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = patchSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid patch', details: parsed.error.flatten() } });
@@ -64,7 +64,7 @@ router.patch('/knowledge/:entryId', requireAuth, requireWorkspace, async (req: A
   res.json({ entry: { id: req.params.entryId, ...existing, ...parsed.data } });
 });
 
-router.delete('/knowledge/:entryId', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.delete('/knowledge/:entryId', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const existing = await dbGet(`knowledgeBase/${req.workspaceId}/${req.params.entryId}`);
   if (!existing) {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Entry not found' } });
@@ -90,7 +90,7 @@ const importSchema = z.object({
     .max(200),
 });
 
-router.post('/knowledge/import', requireAuth, requireWorkspace, requireRole('owner', 'admin'), async (req: AuthedRequest, res) => {
+router.post('/knowledge/import', requireAuth, requireApproved, requireWorkspace, requireRole('owner', 'admin'), async (req: AuthedRequest, res) => {
   const parsed = importSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid import payload (expected { entries: [...] }, max 200)', details: parsed.error.flatten() } });

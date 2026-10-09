@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { dbGet, dbSet } from '../services/firebase.js';
-import { requireAuth, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
+import { requireAuth, requireApproved, requireWorkspace, type AuthedRequest } from '../middleware/auth.js';
 import { config, hasMeta } from '../config/env.js';
 import { oauthConnectUrl, exchangeCodeForToken, listPages, subscribePage } from '../services/meta.js';
 import { encryptSecret } from '../services/crypto.js';
@@ -9,7 +9,7 @@ import { getPlan } from '../services/plans.js';
 
 const router = Router();
 
-router.get('/facebook/connect', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.get('/facebook/connect', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   if (!hasMeta()) {
     res.status(503).json({
       error: {
@@ -88,7 +88,7 @@ const confirmSchema = z.object({ workspaceId: z.string().min(1), pageId: z.strin
  * Confirm a candidate Page: fetch its Page token server-side, subscribe webhooks,
  * then persist. The browser never handles tokens.
  */
-router.post('/facebook/pages/confirm', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/facebook/pages/confirm', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const parsed = confirmSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Invalid page selection' } });
@@ -131,7 +131,7 @@ router.post('/facebook/pages/confirm', requireAuth, requireWorkspace, async (req
   res.status(201).json({ page: { pageId: match.id, pageName: match.name, subscribed: true } });
 });
 
-router.post('/facebook/pages/:pageId/disconnect', requireAuth, requireWorkspace, async (req: AuthedRequest, res) => {
+router.post('/facebook/pages/:pageId/disconnect', requireAuth, requireApproved, requireWorkspace, async (req: AuthedRequest, res) => {
   const page = await dbGet(`facebookPages/${req.params.pageId}`);
   if (!page || page.workspaceId !== req.workspaceId) {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Page not found in this workspace' } });
